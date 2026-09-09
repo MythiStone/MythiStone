@@ -797,6 +797,19 @@
   border-radius: 8px;
 }
 
+/* Gold TOP badge (top-50 divergence) reuses the spec-page .tt-top-badge, but the
+   analyzer already pins its red miss "+" to the node's top-left corner, so float
+   TOP to the top-centre to keep the two clear. The leading id raises specificity
+   above the spec page's phone-width `#static-talent-tree .tt-top-badge` rule. */
+#static-talent-tree .an-ttn .tt-top-badge {
+  top: -10px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  font-size: 8px;
+  padding: 1px 3px;
+}
+
 /* Node states, scoped to analyzer tree nodes (.an-ttn) so the short state names
    can't collide with anything else. */
 .an-ttn.an-dim img {
@@ -863,6 +876,13 @@
 .an-key-match::before { border-color: #66bb6a; }
 .an-key-off::before { border-color: #ffa726; }
 .an-key-miss::before { border-color: #ef5350; }
+/* Solid gold swatch for the top-50 divergence key, matching the .tt-top-badge. */
+.an-key-top::before { border-color: #ffd100; background: #ffd100; }
+
+/* "Top 50 players prefer X" hint under the hero icon, mirroring the spec page's
+   .tt-hero-top-hint. The hero head is centred, so this inherits the alignment. */
+.an-tt-hero-tophint { color: var(--mythi-text-muted); line-height: 1.3; }
+.an-tt-hero-tophint strong { color: var(--bs-emphasis-color); }
 
 /* === Shared "meta match" header ===
    One band across the top of the results: spec identity on the left, and three

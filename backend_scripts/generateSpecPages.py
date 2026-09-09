@@ -768,15 +768,28 @@ def build_multiset_comps(raw_rows, lookup, threshold, limit=10, slot_rank=None):
     return ranked
 
 
-def build_talent_meta(talent_lookup, loadouts, node_pct=None):
+def build_talent_meta(
+    talent_lookup, loadouts, hero_variants=None,
+    top_hero=None, top_hero_pct=0.0, hero_tree_top_counts=None,
+):
     """Meta-loadout payload for the analyzer, folded into the spec meta JSON.
 
     ``meta_by_hero`` gives analyzer.js the most-run meta loadout string *per hero
     tree* (aggregateData.get_loadout), so it can compare a pasted build against
     the meta build for the player's own hero tree and offer a switch to the
-    others; ``popular_hero`` is the tree it defaults its "you're on the off-meta
-    tree" note against. ``node_pct`` maps node id -> meta pick-rate percent (int),
-    so the analyzer draws the same per-node popularity badges the spec page does.
+    others; each entry carries the tree's general-population loadout ``count`` and
+    its top-50 loadout ``top_count``. ``popular_hero`` is the general-population
+    most-run tree; ``top_hero``/``top_hero_pct`` are the tree the top-50 verified
+    players most often run and its share, so the analyzer can flag the top-50
+    preference the same way the spec page does.
+
+    The per-node badges are taken straight from the hero-tree variants the spec
+    page renders (``hero_variants``), so both pages show the SAME numbers and the
+    SAME gold "TOP" flags for the compared hero tree. ``node_pct`` maps hero tree
+    id -> {node id -> general pick-rate percent} (conditional on that hero tree,
+    not spec-wide); ``node_top`` maps hero tree id -> {node id -> top-50 divergence
+    badge info} for the nodes the top-50 players take far more than the general
+    population, mirroring build_ui_tree's ``is_top`` decision.
 
     The tree *geometry* it decodes and draws against (fullNodeOrder + positioned
     nodes) is NOT baked here — generateAnalyzerPage bakes it, credential-free,
@@ -787,6 +800,7 @@ def build_talent_meta(talent_lookup, loadouts, node_pct=None):
     if not talent_lookup.get("fullNodeOrder") or not talent_lookup.get("nodes"):
         return None
 
+    hero_tree_top_counts = hero_tree_top_counts or {}
     meta_by_hero = {}
     popular_hero = None
     popular_count = -1
@@ -795,16 +809,53 @@ def build_talent_meta(talent_lookup, loadouts, node_pct=None):
         if not code:
             continue
         count = int(info.get("count") or 0)
-        meta_by_hero[str(hero_id)] = {"loadout": code, "count": count}
+        meta_by_hero[str(hero_id)] = {
+            "loadout": code,
+            "count": count,
+            "top_count": int(hero_tree_top_counts.get(int(hero_id), 0) or 0),
+        }
         if count > popular_count:
             popular_count = count
             popular_hero = str(hero_id)
 
     if not meta_by_hero:
         return None
-    payload = {"meta_by_hero": meta_by_hero, "popular_hero": popular_hero}
-    if node_pct:
-        payload["node_pct"] = {str(nid): int(pct) for nid, pct in node_pct.items()}
+
+    # Per-hero-tree node badges, lifted from the exact UI trees the spec page
+    # renders so the two pages never disagree. Each variant's class/spec/hero
+    # nodes already carry the tree-conditional general pct (``pct_val``) and the
+    # top-50 divergence decision (``is_top`` + ``top_pct_val`` + the diverging
+    # choice name), so we just fold them into compact per-hero maps.
+    node_pct = {}
+    node_top = {}
+    for v in (hero_variants or []):
+        hid = str(v.get("id"))
+        pmap = {}
+        tmap = {}
+        for tree_key in ("ui_class_tree", "ui_spec_tree", "ui_hero_tree"):
+            for n in ((v.get(tree_key) or {}).get("nodes") or []):
+                nid = str(n["id"])
+                pmap[nid] = int(round(n.get("pct_val", 0.0)))
+                if n.get("is_top"):
+                    entry = {"tp": int(round(n.get("top_pct_val", 0.0)))}
+                    if n.get("top_choice_name"):
+                        entry["cn"] = n["top_choice_name"]
+                        entry["cp"] = int(round(n.get("top_choice_pct_val") or 0))
+                    tmap[nid] = entry
+        if pmap:
+            node_pct[hid] = pmap
+        if tmap:
+            node_top[hid] = tmap
+
+    payload = {
+        "meta_by_hero": meta_by_hero,
+        "popular_hero": popular_hero,
+        "node_pct": node_pct,
+        "node_top": node_top,
+    }
+    if top_hero is not None:
+        payload["top_hero"] = str(top_hero)
+        payload["top_hero_pct"] = int(round(top_hero_pct or 0))
     return payload
 
 
@@ -813,7 +864,8 @@ def build_spec_meta_json(
     left_slots, right_slots, weapon_slots, trinket_slots,
     enchant_slots, enchant_lookup, item_lookup, item_slug_map,
     bis_summary, socket_lookup,
-    talent_lookup=None, loadouts=None, node_pct=None,
+    talent_lookup=None, loadouts=None,
+    hero_variants=None, top_hero=None, top_hero_pct=0.0, hero_tree_top_counts=None,
 ):
     """Compact, machine-readable meta snapshot for one spec, consumed by the
     client-side "Am I meta?" analyzer (assets/js/analyzer.js). Built entirely
@@ -980,7 +1032,11 @@ def build_spec_meta_json(
         "enchant_combo": enchant_combo,
         "enchant_group_expected": enchant_group_expected,
     }
-    talents = build_talent_meta(talent_lookup or {}, loadouts or {}, node_pct or {})
+    talents = build_talent_meta(
+        talent_lookup or {}, loadouts or {},
+        hero_variants=hero_variants, top_hero=top_hero,
+        top_hero_pct=top_hero_pct, hero_tree_top_counts=hero_tree_top_counts,
+    )
     if talents:
         meta["talents"] = talents
     return meta
@@ -2111,16 +2167,6 @@ def main(template_path, output_dir, debug=False, spec=None):
                 hero_by_tree = aggregateData.get_hero_talent_differences_by_hero_tree(
                     conn, cursor, spec_id, current_season_id, valid_talents
                 )
-                # Spec-wide (all hero trees pooled) class/spec pick rates, so the
-                # analyzer's per-node badges show one spec-wide number for the
-                # class + spec trees (hero nodes stay per-tree, from hero_by_tree).
-                class_pop_all = aggregateData.get_class_talent_differences(
-                    conn, cursor, spec_id, current_season_id, valid_talents
-                )
-                spec_pop_all = aggregateData.get_spec_talent_differences(
-                    conn, cursor, spec_id, current_season_id, valid_talents,
-                    rows=spec_talent_rows,
-                )
                 hero_tree_difs = aggregateData.get_hero_tree_differences(
                     conn, cursor, spec_id, current_season_id, valid_subtrees
                 )
@@ -2342,27 +2388,11 @@ def main(template_path, output_dir, debug=False, spec=None):
                 ]
 
                 # hero node -> hero tree, so the loadouts can be split by the
-                # hero tree they run (per-tree per-dungeon talent deviations)
+                # hero tree they run (per-tree per-dungeon talent deviations).
+                # The per-node badge data the analyzer needs is folded in later
+                # from `hero_variants` (build_spec_meta_json), so both pages show
+                # the same numbers for the compared hero tree.
                 tree_nodes = tree_by_spec.get(int(spec_id), {})
-                # Per-node meta pick rate for the analyzer tree badges. Class/spec
-                # nodes use the spec-wide rate; hero nodes use the rate within
-                # their own tree. build_ui_tree gives the same freeNode=100 math
-                # the spec page renders, so both pages agree on the number.
-                node_pct = {}
-                for _n in build_ui_tree(
-                    tree_nodes.get("classNodes", []), class_pop_all
-                )["nodes"]:
-                    node_pct[int(_n["id"])] = int(round(_n["pct_val"]))
-                for _n in build_ui_tree(
-                    tree_nodes.get("specNodes", []), spec_pop_all
-                )["nodes"]:
-                    node_pct[int(_n["id"])] = int(round(_n["pct_val"]))
-                for _tid, _hero_pop in hero_by_tree.items():
-                    for _n in build_ui_tree(
-                        tree_nodes.get("heroNodes", []), _hero_pop,
-                        is_hero=True, pop_hero_tree_id=_tid,
-                    )["nodes"]:
-                        node_pct[int(_n["id"])] = int(round(_n["pct_val"]))
                 hero_node_subtree = {
                     int(hn["id"]): int(hn["subTreeId"])
                     for hn in tree_nodes.get("heroNodes", [])
@@ -2815,7 +2845,10 @@ def main(template_path, output_dir, debug=False, spec=None):
                 left_slots, right_slots, weapon_slots, trinket_slots,
                 enchant_slots, enchant_lookup, item_lookup, item_slug_map,
                 bis_summary, socket_lookup,
-                talent_lookup=talent_lookup, loadouts=loadouts, node_pct=node_pct,
+                talent_lookup=talent_lookup, loadouts=loadouts,
+                hero_variants=hero_variants, top_hero=top_hero_tree,
+                top_hero_pct=top_hero_tree_pct,
+                hero_tree_top_counts=hero_tree_top_counts,
             )
             spec_meta_dir = os.path.join("assets", "json", "spec_meta")
             os.makedirs(spec_meta_dir, exist_ok=True)

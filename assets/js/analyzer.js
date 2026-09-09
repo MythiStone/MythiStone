@@ -848,6 +848,12 @@
     var haveScore = diff.haveScore, missing = diff.missing;
     function heroName(h) { return heroTreeName(T, h); }
 
+    // Top-50 verified-player signal (spec-page parity): the tree those players
+    // most often run, its share, and the "<spec> <class>" label the badges name.
+    var topHero = T.top_hero != null ? String(T.top_hero) : null;
+    var topHeroPct = T.top_hero_pct;
+    var specLabel = ((meta.spec || "") + " " + (meta.class || "")).trim();
+
     // Head: title + copy-meta-loadout button.
     var copyBtn = "";
     if (hero && byHero[hero] && byHero[hero].loadout) {
@@ -859,13 +865,32 @@
 
     var heroKeys = Object.keys(byHero);
 
+    // The comparison-basis note. Keep the general-population context ("most X
+    // players run <popular>") and layer the top-50 nuance on top of it, rather
+    // than replacing one with the other, so both facts are visible: the casual
+    // favourite AND what the elite actually run.
     var heroNote = "";
+    var noteHead = '<p class="an-tt-note text-xs mb-2">' +
+      '<i class="material-symbols-rounded align-middle me-1">info</i>';
+    // top-50 clause, only when the elite most-run tree differs from the general
+    // favourite (otherwise it just restates the same tree).
+    var topClause = (topHero && popular && topHero !== popular)
+      ? " The top 50 players most often run <strong>" + esc(heroName(topHero)) + "</strong>" +
+        (topHeroPct != null ? " (" + topHeroPct + "%)" : "") + "."
+      : "";
     if (playerHero && popular && playerHero !== popular) {
-      heroNote = '<p class="an-tt-note text-xs mb-2">' +
-        '<i class="material-symbols-rounded align-middle me-1">info</i>' +
-        "You're playing <strong>" + esc(heroName(playerHero)) + "</strong>. Most meta " +
-        esc(meta.spec || "") + " players run <strong>" + esc(heroName(popular)) +
-        "</strong> — you're being compared to the " + esc(heroName(hero)) + " build.</p>";
+      heroNote = noteHead +
+        "You're playing <strong>" + esc(heroName(playerHero)) + "</strong>. Most " +
+        esc(meta.spec || "") + " players run <strong>" + esc(heroName(popular)) + "</strong>." +
+        topClause +
+        " You're being compared to the " + esc(heroName(hero)) + " build.</p>";
+    } else if (playerHero && hero && playerHero !== hero && !byHero[playerHero]) {
+      // Player runs a tree we have no meta build for yet: say what we compared to.
+      // (A deliberate hero switch away from a tree we DO have a build for needs no
+      // banner -- the hero-tree hint already explains the top-50 preference.)
+      heroNote = noteHead +
+        "We don't have a meta build for <strong>" + esc(heroName(playerHero)) +
+        "</strong> yet, so you're being compared to the " + esc(heroName(hero)) + " build.</p>";
     }
 
     function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -886,13 +911,34 @@
       return (e && e.type) || "passive";
     }
     // Meta pick-rate badge for a node (spec-page style: hidden for free nodes,
-    // absent when spec_meta carries no percentage for the id).
-    var nodePct = T.node_pct || {};
+    // absent when spec_meta carries no percentage for the id). node_pct/node_top
+    // are keyed by hero tree, so the numbers are conditional on the compared tree
+    // and match the spec page's per-variant figures exactly.
+    var nodePct = (T.node_pct && (T.node_pct[hero] || T.node_pct[String(hero)])) || {};
+    var nodeTop = (T.node_top && (T.node_top[hero] || T.node_top[String(hero)])) || {};
     function pctBadge(nid, node) {
       if (node.free) return "";
       var p = nodePct[nid] != null ? nodePct[nid] : nodePct[String(nid)];
       if (p == null) return "";
       return '<span class="tt-badge">' + p + "%</span>";
+    }
+    // Gold "TOP" badge for a node the top-50 verified players take far more than
+    // the general population -- the same divergence flag the spec page draws.
+    function topBadge(nid, node) {
+      if (node.free) return "";
+      var t = nodeTop[nid] != null ? nodeTop[nid] : nodeTop[String(nid)];
+      if (t == null) return "";
+      var tip;
+      if (t.cn) {
+        tip = "Top 50 " + specLabel + " players pick " + t.cn + ": " + t.tp +
+          "% vs " + (t.cp != null ? t.cp : "N/A") + "% of the general population.";
+      } else {
+        var gp = nodePct[nid] != null ? nodePct[nid] : nodePct[String(nid)];
+        tip = "Used by " + t.tp + "% of the top 50 " + specLabel +
+          " players vs " + (gp != null ? gp : "N/A") + "% of the general population.";
+      }
+      return '<span class="tt-top-badge" data-bs-toggle="tooltip" data-bs-container="body" title="' +
+        esc(tip) + '">TOP</span>';
     }
     // The icon + badges for a node, drawn spec-page style: choice nodes get the
     // octagon-border + arrows, passive/active/tiered keep the round/tiered icon
@@ -909,7 +955,7 @@
       var alt = esc(entry ? entry.name : "");
       var rankBadge = node.maxRanks > 1 ? '<span class="an-ttn-rank">' + node.maxRanks + "</span>" : "";
       var missBadge = nodeState(nid, node) === "an-miss" ? '<span class="an-ttn-miss">+</span>' : "";
-      var badges = rankBadge + missBadge + pctBadge(nid, node);
+      var badges = topBadge(nid, node) + rankBadge + missBadge + pctBadge(nid, node);
       if (ntypeOf(node) === "choice") {
         return '<div class="tt-choice-wrapper" style="--border-color:#ffb000;width:100%;height:100%;">' +
           '<div class="arrow-left"></div>' +
@@ -981,13 +1027,29 @@
           nodeInner(o.id, o.node) + "</div>";
       }).join("");
       var heroLabel = esc(st.name || "Hero tree");
+      // Spec-page parity: mark the shown tree TOP when the elite most run it, else
+      // point to the tree they do prefer (with the switch hint when it's clickable).
+      var isTopHero = topHero && String(hero) === topHero;
+      var nameBadge = isTopHero
+        ? ' <span class="badge tt-top-badge tt-top-badge-inline" data-bs-toggle="tooltip"' +
+          ' data-bs-container="body" title="' +
+          esc("Most-used hero tree among the top 50 " + specLabel + " players" +
+            (topHeroPct != null ? " (" + topHeroPct + "%)" : "") + ".") + '">TOP</span>'
+        : "";
+      var topHint = (topHero && !isTopHero)
+        ? '<div class="an-tt-hero-tophint text-xs mt-2">' +
+          '<span class="badge tt-top-badge tt-top-badge-inline me-1">TOP</span>' +
+          "Top 50 players prefer <strong>" + esc(heroName(topHero)) + "</strong>" +
+          (topHeroPct != null ? " (" + topHeroPct + "%)" : "") +
+          (multi ? "<br>click the icon to view" : "") + "</div>"
+        : "";
       return '<div class="tt-column tt-hero-column an-tt-hero-column">' +
         '<div class="an-tt-hero-head">' +
         '<div class="position-relative d-inline-block">' +
         '<div' + switchAttrs + '>' +
         '<img class="tt-hero-icon" src="' + icon + '" alt="' + heroLabel +
         '" onerror="this.src=\'' + QUESTION + '\'">' + sharePill + hint + "</div></div>" +
-        '<div class="an-tt-hero-name">' + heroLabel + "</div></div>" +
+        '<div class="an-tt-hero-name">' + heroLabel + nameBadge + "</div>" + topHint + "</div>" +
         '<div class="an-tt-hero-nodes">' + nodesHtml + "</div></div>";
     }
 
@@ -999,11 +1061,13 @@
       else if (n.g === "spec") specIds.push(nid);
       else if (n.g === "hero" && String(n.subTreeId) === String(shownHero)) heroIds.push(nid);
     });
+    var hasTop = Object.keys(nodeTop).length > 0;
     var legend =
       '<div class="an-tt-legend">' +
       '<span class="an-tt-key an-key-match">Matches meta</span>' +
       '<span class="an-tt-key an-key-off">Your off-meta pick</span>' +
-      '<span class="an-tt-key an-key-miss">Meta runs, you don\'t</span></div>';
+      '<span class="an-tt-key an-key-miss">Meta runs, you don\'t</span>' +
+      (hasTop ? '<span class="an-tt-key an-key-top">Top 50 pick</span>' : "") + "</div>";
 
     // Positioned tree when nodes carry coordinates; flat chip fallback otherwise.
     var hasCoords = Object.keys(T.nodes).some(function (nid) {
@@ -1124,7 +1188,14 @@
         subTrees: treeFile.subTrees || (mt && mt.subTrees) || {},
         meta_by_hero: (mt && mt.meta_by_hero) || {},
         popular_hero: mt ? mt.popular_hero : null,
+        // Top-50 verified-player signal, mirroring the spec page: the tree those
+        // players most often run and its share, plus per-hero node badge maps.
+        top_hero: mt ? mt.top_hero : null,
+        top_hero_pct: mt ? mt.top_hero_pct : null,
+        // node_pct/node_top are keyed by hero tree id (percentages are conditional
+        // on the compared tree, so they match the spec page's per-variant numbers).
         node_pct: (mt && mt.node_pct) || {},
+        node_top: (mt && mt.node_top) || {},
       };
     }
     // No separate tree file (older deploy): fall back to whatever spec_meta holds.
@@ -1142,6 +1213,13 @@
   function refreshTalentTooltips(host) {
     if (window.$WowheadPower && typeof window.$WowheadPower.refreshLinks === "function") {
       try { window.$WowheadPower.refreshLinks(); } catch (e) { /* best-effort */ }
+    }
+    // The global tooltip init only scans the DOM at page load; a hero-switch
+    // re-render swaps in fresh TOP badges, so wire their Bootstrap tooltips here.
+    if (host && window.bootstrap && window.bootstrap.Tooltip) {
+      host.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+        try { window.bootstrap.Tooltip.getOrCreateInstance(el, {}); } catch (e) { /* best-effort */ }
+      });
     }
   }
 
