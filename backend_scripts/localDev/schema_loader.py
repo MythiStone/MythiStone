@@ -8,8 +8,9 @@
    column-0 ``END;`` to ``END$$`` (inner ``END IF;`` / ``END WHILE;`` are indented and
    left untouched), then feed the whole thing to the ``mysql`` CLI which understands
    ``DELIMITER``.
-2. Nine tables carry ``/*!50100 TABLESPACE `name` */`` clauses that execute on MySQL 8 and
-   reference named tablespaces that do not exist in a fresh container. We strip them.
+2. Some tables carry ``/*!50100 TABLESPACE `name` */`` clauses (referencing named tablespaces
+   absent from a fresh container) and/or ``DATA DIRECTORY='...'`` clauses (pinning the table to a
+   host drive the container lacks). Neither replays in a throwaway container, so we strip both.
 
 The routines are ``DEFINER=`Test`@`%```; that user must exist before they are created or
 ``CALL`` later fails with 1449, so we create it first.
@@ -31,6 +32,10 @@ _ROUTINE_START_RE = re.compile(r"^CREATE\s+DEFINER=", re.MULTILINE)
 # `/*!50100 TABLESPACE `whatever` */` -- version-gated, so it runs on 8.0 and fails.
 _TABLESPACE_RE = re.compile(r"/\*!50100 TABLESPACE `[^`]+` \*/")
 
+# `DATA DIRECTORY='/mnt/...'` -- pins a file-per-table table to a host drive the throwaway
+# container does not have. Strip the clause (and the space before it).
+_DATA_DIR_RE = re.compile(r"\s*DATA DIRECTORY='[^']*'")
+
 # A routine's own terminator: a line that is exactly `END;` or `END <label>;` at column 0.
 # Inner block ends (`  END IF;`, `  END WHILE;`, `  END LOOP;`) are always indented, so
 # anchoring to column 0 with no leading whitespace never matches them.
@@ -40,9 +45,11 @@ _ROUTINE_END_RE = re.compile(r"^(END(?:\s+[A-Za-z_]\w*)?);[ \t]*$", re.MULTILINE
 def preprocess_sql(raw_sql):
     """Return a single SQL script the ``mysql`` CLI can replay against a fresh DB.
 
-    Strips the tablespace clauses, then DELIMITER-wraps the routine section.
+    Strips the tablespace and DATA DIRECTORY clauses, then DELIMITER-wraps the routine
+    section.
     """
     sql = _TABLESPACE_RE.sub("", raw_sql)
+    sql = _DATA_DIR_RE.sub("", sql)
 
     match = _ROUTINE_START_RE.search(sql)
     if not match:

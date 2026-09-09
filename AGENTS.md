@@ -121,10 +121,38 @@ them `DELIMITER $$ ... END$$ DELIMITER ;`. Runtime `CALL` needs the definer user
 `docker exec` needs `-i` for heredoc stdin; a proc created via `mysql <<SQL` without DELIMITER
 truncates at the first inner `;`; write the temp .sql to a real Windows path (not `/c/...` MSYS);
 hold an idle in-transaction MDL for contention tests with `START TRANSACTION; SELECT ...; \! sleep
-40`. The seeder's `schema_loader.py` does this DELIMITER-wrapping/tablespace-stripping end-to-end;
-use the manual recipe only for isolated proc changes.
+40`. The seeder's `schema_loader.py` does this DELIMITER-wrapping and tablespace/DATA-DIRECTORY-stripping
+end-to-end; use the manual recipe only for isolated proc changes.
 
 ## Database and aggregation
+
+### Physical storage placement and moving a table to another drive
+
+Large raw/aggregated tables are pinned to specific host drives; `innodb_directories`
+(`/var/lib/mysql`, `/sdb/mysql-vol`, `/mnt/HC_Volume_103256352/mysql-vol`) lists those drives so
+external files are rediscovered on restart. Two mechanisms coexist. Legacy **general tablespaces**
+(`/*!50100 TABLESPACE `name` */`, created MANUALLY on the server, NOT in `database.sql`):
+`members`/`equipments` on the Hetzner volume, `ts_runs`/`ts_run_members` on `/sdb`,
+`ts_character_stats`/`ts_agregated_equipment` (tablespace name is misspelled)/`aggregated_bonus_lists`
+on the datadir. Per-table **`DATA DIRECTORY='...'`** file-per-table tables: `member_character` and
+`member_dungeon_score` on the Hetzner volume.
+
+Prefer `DATA DIRECTORY` (file-per-table) for anything the season wipe TRUNCATEs or the pipeline
+DROP/rebuilds. A general tablespace's shared `.ibd` NEVER returns freed space to the OS (TRUNCATE and
+DROP free pages only internally, and there is no shrink op), so wiped general-tablespace tables bloat
+permanently; a file-per-table `.ibd` is recreated by TRUNCATE and deleted by DROP, so disk is
+reclaimed.
+
+Moving an existing table to another drive: **`DATA DIRECTORY` is honored only by `CREATE TABLE`, never
+`ALTER TABLE`.** `ALTER ... DATA DIRECTORY` warns `<DATA DIRECTORY> option ignored` and leaves the
+file in the datadir, and `ALTER ... TABLESPACE=innodb_file_per_table` converts a general-tablespace
+table to file-per-table but also lands it in the datadir. So recreate it on the target drive with the
+collector paused: `CREATE TABLE t_mig (<same cols + indexes, but NO foreign key>) ... DATA
+DIRECTORY='/drive/path/'`; `INSERT INTO t_mig SELECT * FROM t`; check `COUNT(*)` matches; with
+`foreign_key_checks=0`, `RENAME TABLE t TO t_old, t_mig TO t`; re-`ADD CONSTRAINT` the FK; `DROP TABLE
+t_old`. The temp table omits the FK because constraint names are schema-unique. Verify placement in
+`information_schema.INNODB_TABLES` + `INNODB_DATAFILES` (`SPACE_TYPE='Single'`, `PATH` under the
+drive).
 
 ### Aggregation pipeline (shadow swap)
 
