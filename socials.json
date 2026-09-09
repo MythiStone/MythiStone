@@ -1709,5 +1709,14 @@
         "blog": "This season MythiStone has logged 604 K Protection Paladin runs. The Lightsmith hero tree leads at 76% of builds, with Templar (24%) trailing.\n\n87% of tracked runs beat the timer, and 5% earn all three chests. The stat priority skews toward Haste > Crit > Mastery > Versatility. Its top run this season is +20 Den of Nalorakk in 31:31.663.",
         "post": "Protection Paladin: 87% timed runs across 604K keys, yet only 5% three-chest. Lightsmith dominates 76% pick rate - guess they'd rather beat the clock than the chest. Haste > Crit > Mastery > Versatility. #WoW #MythicPlus https://mythistone.com/classes/Tank/Protection_Paladin",
         "timestamp": 1788901369804
+    },
+    "data/social/longest_run_mplus_588_11_11385053_1787268465000.png": {
+        "title": "Longest Run: +11 Altar of Fangs",
+        "post_type": "longest_run",
+        "link": "https://mythistone.com/pages/dashboard",
+        "social": "Altar of Fangs 11 clocked 03:09:45.053 - longest_run this season, 19 days ago EU. Brewmaster Monk, Holy Paladin, Arcane Mage, Frost Death Knight, Havoc Demon Hunter turned a key into a marathon. #WoW #MythicPlus https://mythistone.com/pages/dashboard",
+        "blog": "The longest Mythic+ run tracked this season is a +11 Altar of Fangs that ground on for 03:09:45.053 on the EU region.\n\nCredit the group that ran it: Brewmaster Monk, Holy Paladin, Arcane Mage, Frost Death Knight, Havoc Demon Hunter. That was 19 days ago. Every record here keeps moving as new keys get pushed.",
+        "post": "Altar of Fangs 11 clocked 03:09:45.053 - longest_run this season, 19 days ago EU. Brewmaster Monk, Holy Paladin, Arcane Mage, Frost Death Knight, Havoc Demon Hunter turned a key into a marathon. #WoW #MythicPlus https://mythistone.com/pages/dashboard",
+        "timestamp": 1788987128165
     }
 }
