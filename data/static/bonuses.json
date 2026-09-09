@@ -96881,5 +96881,23 @@
   "14004": {
     "id": 14004,
     "serverside": true
+  },
+  "14047": {
+    "id": 14047,
+    "dropLevelCurve": {
+      "curveId": 109508,
+      "offset": 13,
+      "priority": 0,
+      "squishEra": 2
+    }
+  },
+  "14048": {
+    "id": 14048,
+    "dropLevelCurve": {
+      "curveId": 92772,
+      "offset": 13,
+      "priority": 0,
+      "squishEra": 2
+    }
   }
 }
