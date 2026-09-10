@@ -1370,6 +1370,15 @@ async def run_raiderio_top_loadouts(session):
                         except Exception:
                             rank = page * 100 + idx + 1
 
+                        # raider.io spec ranking score for this player (their spec
+                        # mythic+ score); stored on every per-dungeon row so the
+                        # top-50 average-score performance metric reads it directly.
+                        entry_score = entry.get("score")
+                        try:
+                            entry_score = float(entry_score) if entry_score is not None else None
+                        except (TypeError, ValueError):
+                            entry_score = None
+
                         char = entry.get("character")
                         if not isinstance(char, dict):
                             await GLOBAL_STATS.increment("skipped_character_entries")
@@ -1479,6 +1488,7 @@ async def run_raiderio_top_loadouts(session):
                                         "keystone_level": chosen.get("mythic_level") or chosen.get("mythicLevel") or None,
                                         "zone_id": zid,
                                         "map_challenge_mode_id": (chosen.get("zone") or {}).get("map_challenge_mode_id") if isinstance(chosen.get("zone"), dict) else None,
+                                        "score": entry_score,
                                     },
                                     "items": items_rows,
                                     "gems": gems_rows,
@@ -1587,6 +1597,7 @@ async def run_raiderio_top_loadouts(session):
                                 lut,
                                 meta.get("keystone_level"),
                                 meta.get("loadout_text"),
+                                meta.get("score"),
                             )
 
                             # batch insert children - ensure season is numeric DB id
