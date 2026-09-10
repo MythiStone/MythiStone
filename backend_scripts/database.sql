@@ -795,6 +795,7 @@ CREATE TABLE `top_player_loadouts` (
   `loadout_text` text,
   `loadout_updated_at` datetime DEFAULT NULL,
   `keystone_level` tinyint DEFAULT NULL,
+  `score` double DEFAULT NULL,
   PRIMARY KEY (`spec_id`,`rank`,`map_challenge_mode_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 

@@ -802,6 +802,12 @@ def seed_standalone(conn, cursor, static, rng, cfg, pools):
         for rank in range(1, cfg["top_player_ranks"] + 1):
             tree = rank_trees[rank - 1]
             hero_nodes = plan["hero_by_tree"].get(tree, [])
+            # raider.io spec score for this ranked player: one value per player
+            # (repeated across their per-dungeon rows, as production stores it),
+            # spread by spec and descending with rank so the top-50 average-score
+            # scatter shows a real per-spec spread locally.
+            spec_base = 3000 + (sid % 7) * 60
+            rank_score = round(spec_base - rank * 6 + rng.uniform(-15, 15), 1)
             for cmid in cmids:
                 # Full loadout: core (stable across dungeons) + hero nodes (so the tree is
                 # inferrable) + this dungeon's flex picks (the per-dungeon difference signal).
@@ -825,7 +831,8 @@ def seed_standalone(conn, cursor, static, rng, cfg, pools):
                     loadout_text = None
                 tpl.append((sid, season, rank, cmid, rng.choice(REGIONS),
                             rng.randint(10**6, 10**9), f"Player{sid}r{rank}", "TestRealm",
-                            loadout_key, now_dt, rng.randint(12, 22), loadout_text))
+                            loadout_key, now_dt, rng.randint(12, 22), loadout_text,
+                            rank_score))
                 for slot in EQUIPMENT_SLOTS:
                     pool = item_pools.get(slot) or []
                     if not pool:
@@ -856,8 +863,8 @@ def seed_standalone(conn, cursor, static, rng, cfg, pools):
 
     _insert_many(conn, cursor,
         "INSERT INTO top_player_loadouts (spec_id, season, `rank`, map_challenge_mode_id, region, "
-        "character_id, character_name, realm, loadout_key, loadout_updated_at, keystone_level, loadout_text) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", tpl)
+        "character_id, character_name, realm, loadout_key, loadout_updated_at, keystone_level, loadout_text, score) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", tpl)
     _insert_many(conn, cursor,
         "INSERT INTO top_player_loadout_items (spec_id, season, `rank`, map_challenge_mode_id, slot, "
         "item_id, item_level, bonus_ids) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", tpl_items)
